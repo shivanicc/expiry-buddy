@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Expiry Buddy</title>
+<style>
+  :root { --bg:#f6f7f2; --card:#fff; --text:#1d2a1f; --muted:#6b7a6e; --line:#e2e6dc; --ok:#2e9e5b; --warn:#e3a008; --bad:#d64545; --accent:#2a7f62; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111614; --card:#1a211d; --text:#e8efe9; --muted:#97a69b; --line:#2a332d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); }
+  .wrap { max-width:720px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:26px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 20px; }
+  form { display:grid; grid-template-columns: 1fr 150px 110px; gap:8px; margin-bottom:20px; }
+  @media (max-width:560px){ form{ grid-template-columns:1fr 1fr; } form button{ grid-column:1/-1; } }
+  input, select { padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); font-size:15px; }
+  button { padding:12px; border:0; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; font-size:15px; cursor:pointer; }
+  .stats { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .stat { flex:1; min-width:120px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .stat b { display:block; font-size:24px; } .stat span { color:var(--muted); font-size:13px; }
+  ul { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  li { background:var(--card); border:1px solid var(--line); border-left:6px solid var(--ok); border-radius:12px; padding:12px 14px; display:flex; align-items:center; gap:12px; }
+  li.warn { border-left-color:var(--warn); } li.bad { border-left-color:var(--bad); }
+  li .name { flex:1; font-weight:600; } li .when { color:var(--muted); font-size:14px; }
+  li.bad .when { color:var(--bad); font-weight:600; } li.warn .when { color:var(--warn); font-weight:600; }
+  li button { background:transparent; color:var(--muted); font-weight:400; padding:6px 8px; }
+  li button:hover { color:var(--bad); }
+  .empty { color:var(--muted); text-align:center; padding:30px; border:1px dashed var(--line); border-radius:12px; }
+  .tip { margin-top:18px; padding:12px 14px; background:var(--card); border:1px solid var(--line); border-radius:12px; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🥬 Expiry Buddy</h1>
+  <p class="sub">Add what's in your fridge. We'll tell you what to eat first so nothing goes to waste.</p>
+
+  <form id="f">
+    <input id="name" placeholder="Food (e.g. spinach, milk, leftovers)" required autocomplete="off" />
+    <input id="date" type="date" required />
+    <button type="submit">Add</button>
+  </form>
+
+  <div class="stats">
+    <div class="stat"><b id="sExpired">0</b><span>expired</span></div>
+    <div class="stat"><b id="sSoon">0</b><span>expiring in 3 days</span></div>
+    <div class="stat"><b id="sFresh">0</b><span>still fresh</span></div>
+  </div>
+
+  <ul id="list"></ul>
+  <div class="tip" id="tip"></div>
+</div>
+<script>
+const KEY = "expiry-buddy-items";
+let items = [];
+try { items = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch { items = []; }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch {} };
+
+const today = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const daysLeft = (iso) => Math.round((new Date(iso + "T00:00:00") - today()) / 86400000);
+const label = (n) => n < 0 ? `expired ${-n} day${-n===1?"":"s"} ago` : n === 0 ? "expires today" : n === 1 ? "expires tomorrow" : `${n} days left`;
+
+function render() {
+  items.sort((a, b) => a.date.localeCompare(b.date));
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  let expired = 0, soon = 0, fresh = 0;
+  if (!items.length) list.innerHTML = '<div class="empty">Nothing tracked yet. Add your first item above.</div>';
+  for (const it of items) {
+    const n = daysLeft(it.date);
+    const cls = n < 0 ? "bad" : n <= 3 ? "warn" : "";
+    if (n < 0) expired++; else if (n <= 3) soon++; else fresh++;
+    const li = document.createElement("li"); li.className = cls;
+    li.innerHTML = `<span class="name"></span><span class="when">${label(n)}</span><button title="Remove">✕</button>`;
+    li.querySelector(".name").textContent = it.name;
+    li.querySelector("button").onclick = () => { items = items.filter(x => x !== it); save(); render(); };
+    list.appendChild(li);
+  }
+  document.getElementById("sExpired").textContent = expired; document.getElementById("sSoon").textContent = soon; document.getElementById("sFresh").textContent = fresh;
+  const first = items.find(it => daysLeft(it.date) >= 0 && daysLeft(it.date) <= 3);
+  document.getElementById("tip").textContent = expired ? "Toss what's expired, then eat the yellow items first."
+    : first ? `Eat the ${first.name} first, it ${label(daysLeft(first.date))}.`
+    : items.length ? "Everything's fresh. Nice." : "Tip: add things as you unpack groceries. Data stays in your browser.";
+}
+
+document.getElementById("f").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const nameEl = document.getElementById("name"), dateEl = document.getElementById("date");
+  if (!nameEl.value.trim() || !dateEl.value) return;
+  items.push({ name: nameEl.value.trim(), date: dateEl.value });
+  nameEl.value = ""; nameEl.focus();
+  save(); render();
+});
+document.getElementById("date").valueAsDate = new Date(Date.now() + 5 * 86400000);
+render();
+</script>
+</body>
+</html>
